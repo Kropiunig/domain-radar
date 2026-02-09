@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const RESULTS_PATH = join(__dirname, '..', 'data', 'results.json');
+const STATUS_PATH = join(__dirname, '..', 'data', 'status.json');
 
 let results = { found: [], checked: new Set() };
 
@@ -54,6 +55,11 @@ export function getStats() {
   };
 }
 
+export async function saveStatus(statusData) {
+  await mkdir(dirname(STATUS_PATH), { recursive: true });
+  await writeFile(STATUS_PATH, JSON.stringify(statusData, null, 2));
+}
+
 // Terminal colors (no dependencies)
 const c = {
   reset: '\x1b[0m',
@@ -102,6 +108,18 @@ export function printError(domain, reason) {
 export function printStats(checked, found) {
   console.log(
     `\n  ${c.cyan}${c.bold}Stats:${c.reset} ${checked} checked, ${c.green}${found} available${c.reset}\n`
+  );
+}
+
+export function printSkippedPremium(domain, price) {
+  process.stdout.write(
+    `\r  ${c.yellow}$ ${domain.padEnd(30)} ${c.dim}(premium ${price} — too expensive)${c.reset}\n`
+  );
+}
+
+export function printBatchProgress(batchNum, batchSize) {
+  process.stdout.write(
+    `\r  ${c.dim}batch #${batchNum} (${batchSize} domains)...${c.reset}`
   );
 }
 

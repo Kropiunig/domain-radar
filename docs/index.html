@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cool Domain Sniper</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
+
+  /* Password Gate */
+  #gate {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; flex-direction: column; gap: 24px;
+  }
+  #gate h1 { font-size: 24px; color: var(--accent); }
+  #gate .login-box {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 32px; display: flex; flex-direction: column; gap: 16px; width: 340px;
+  }
+  #gate input {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px 14px; color: var(--text); font-size: 14px; outline: none;
+    font-family: var(--mono);
+  }
+  #gate input:focus { border-color: var(--accent); }
+  #gate button {
+    background: var(--accent); color: #fff; border: none; border-radius: 6px;
+    padding: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  #gate button:hover { opacity: 0.9; }
+  #gate .error { color: var(--red); font-size: 13px; text-align: center; display: none; }
+
+  /* Dashboard */
+  #dashboard { display: none; max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
+
+  /* Header */
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 24px; flex-wrap: wrap; gap: 12px;
+  }
+  .header h1 { font-size: 22px; color: var(--accent); display: flex; align-items: center; gap: 10px; }
+  .status-dot {
+    width: 10px; height: 10px; border-radius: 50%; display: inline-block;
+    background: var(--text-dim);
+  }
+  .status-dot.running { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+  .header-actions { display: flex; gap: 8px; }
+  .btn {
+    background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 14px; color: var(--text); font-size: 13px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Status bar */
+  .status-bar {
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 20px; margin-bottom: 20px;
+    display: flex; flex-wrap: wrap; gap: 24px; font-size: 13px; color: var(--text-dim);
+  }
+  .status-bar span { display: flex; align-items: center; gap: 6px; }
+  .status-bar strong { color: var(--text); }
+
+  /* Stats cards */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px; }
+  .stat-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 20px;
+  }
+  .stat-card .label { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .stat-card .value { font-size: 28px; font-weight: 700; font-family: var(--mono); }
+  .stat-card .value.green { color: var(--green); }
+  .tld-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .tld-badge {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
+    padding: 2px 10px; font-size: 12px; font-family: var(--mono); color: var(--text-dim);
+  }
+
+  /* Filters */
+  .filters {
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 20px; margin-bottom: 20px;
+    display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  }
+  .filters label { font-size: 12px; color: var(--text-dim); }
+  .filters select, .filters input[type="text"] {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 10px; color: var(--text); font-size: 13px; outline: none;
+  }
+  .filters select:focus, .filters input:focus { border-color: var(--accent); }
+  .filter-group { display: flex; flex-direction: column; gap: 4px; }
+  .price-display { font-family: var(--mono); font-size: 12px; color: var(--text-dim); min-width: 60px; }
+
+  /* Table */
+  .table-wrap {
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    overflow-x: auto;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th {
+    text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--border);
+    font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px;
+    cursor: pointer; user-select: none; white-space: nowrap;
+  }
+  th:hover { color: var(--accent); }
+  th .sort-arrow { margin-left: 4px; font-size: 10px; }
+  td { padding: 10px 16px; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(88,166,255,0.04); }
+  .domain-cell { font-family: var(--mono); color: var(--green); font-weight: 500; }
+  .premium-tag {
+    background: var(--yellow); color: #000; font-size: 10px; font-weight: 700;
+    padding: 1px 6px; border-radius: 4px; margin-left: 6px;
+  }
+  .dim { color: var(--text-dim); }
+  .empty-state { text-align: center; padding: 48px; color: var(--text-dim); }
+
+  @media (max-width: 640px) {
+    .stats { grid-template-columns: 1fr 1fr; }
+    .filters { flex-direction: column; }
+    .header { flex-direction: column; align-items: flex-start; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Password Gate -->
+<div id="gate">
+  <h1>Cool Domain Sniper</h1>
+  <div class="login-box">
+    <input type="password" id="pw" placeholder="Password" autocomplete="off">
+    <button onclick="tryLogin()">Login</button>
+    <div class="error" id="pw-error">Wrong password</div>
+  </div>
+</div>
+
+<!-- Dashboard -->
+<div id="dashboard">
+  <div class="header">
+    <h1>
+      <span class="status-dot" id="statusDot"></span>
+      Cool Domain Sniper
+    </h1>
+    <div class="header-actions">
+      <button class="btn" onclick="refreshData()">Refresh Data</button>
+      <button class="btn" onclick="logout()">Logout</button>
+    </div>
+  </div>
+
+  <div class="status-bar" id="statusBar">
+    <span>Status: <strong id="statusText">Loading...</strong></span>
+  </div>
+
+  <div class="stats">
+    <div class="stat-card">
+      <div class="label">Domains Checked</div>
+      <div class="value" id="statChecked">--</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Domains Found</div>
+      <div class="value green" id="statFound">--</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Found by TLD</div>
+      <div class="tld-badges" id="tldBadges"></div>
+    </div>
+  </div>
+
+  <div class="filters">
+    <div class="filter-group">
+      <label>Search</label>
+      <input type="text" id="filterSearch" placeholder="domain name..." oninput="renderTable()">
+    </div>
+    <div class="filter-group">
+      <label>TLD</label>
+      <select id="filterTld" onchange="renderTable()"><option value="">All</option></select>
+    </div>
+    <div class="filter-group">
+      <label>Strategy</label>
+      <select id="filterStrategy" onchange="renderTable()"><option value="">All</option></select>
+    </div>
+    <div class="filter-group">
+      <label>Max Price</label>
+      <input type="text" id="filterMaxPrice" placeholder="e.g. 50" oninput="renderTable()" style="width:80px">
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th onclick="sortBy('domain')">Domain <span class="sort-arrow" id="sort-domain"></span></th>
+          <th onclick="sortBy('strategy')">Strategy <span class="sort-arrow" id="sort-strategy"></span></th>
+          <th onclick="sortBy('price')">Price <span class="sort-arrow" id="sort-price"></span></th>
+          <th onclick="sortBy('tld')">TLD <span class="sort-arrow" id="sort-tld"></span></th>
+          <th onclick="sortBy('checkedAt')">Found <span class="sort-arrow" id="sort-checkedAt"></span></th>
+        </tr>
+      </thead>
+      <tbody id="resultsBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+// --- Config ---
+const REPO_OWNER = 'AlexanderKropiunig';
+const REPO_NAME = 'cool-domain-sniper';
+const BRANCH = 'main';
+const PASSWORD_HASH = 'a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3';
+
+function rawUrl(path) {
+  return `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${BRANCH}/${path}`;
+}
+
+// --- Auth ---
+async function sha256(text) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function tryLogin() {
+  const pw = document.getElementById('pw').value;
+  const hash = await sha256(pw);
+  if (hash === PASSWORD_HASH) {
+    sessionStorage.setItem('authed', '1');
+    showDashboard();
+  } else {
+    document.getElementById('pw-error').style.display = 'block';
+  }
+}
+
+document.getElementById('pw').addEventListener('keydown', e => { if (e.key === 'Enter') tryLogin(); });
+
+function logout() {
+  sessionStorage.removeItem('authed');
+  location.reload();
+}
+
+function showDashboard() {
+  document.getElementById('gate').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  refreshData();
+}
+
+// --- Data ---
+let resultsData = [];
+let statusData = {};
+let currentSort = { key: 'checkedAt', asc: false };
+
+async function refreshData() {
+  try {
+    const [resRes, statRes] = await Promise.allSettled([
+      fetch(rawUrl('data/results.json') + '?t=' + Date.now()),
+      fetch(rawUrl('data/status.json') + '?t=' + Date.now()),
+    ]);
+
+    if (resRes.status === 'fulfilled' && resRes.value.ok) {
+      const data = await resRes.value.json();
+      resultsData = data.found ?? [];
+    }
+    if (statRes.status === 'fulfilled' && statRes.value.ok) {
+      statusData = await statRes.value.json();
+    }
+  } catch (e) {
+    console.error('Fetch error:', e);
+  }
+  renderAll();
+}
+
+function renderAll() {
+  renderStatus();
+  renderStats();
+  renderFilters();
+  renderTable();
+}
+
+// --- Status ---
+function renderStatus() {
+  const dot = document.getElementById('statusDot');
+  const bar = document.getElementById('statusBar');
+  const running = statusData.running === true;
+
+  dot.className = 'status-dot' + (running ? ' running' : '');
+
+  let html = `<span>Status: <strong>${running ? 'Running' : 'Idle'}</strong></span>`;
+  if (statusData.lastCompleted) {
+    html += `<span>Last run: <strong>${formatTime(statusData.lastCompleted)}</strong></span>`;
+  }
+  if (statusData.lastCompleted) {
+    const next = new Date(new Date(statusData.lastCompleted).getTime() + 6 * 3600000);
+    html += `<span>Next run: <strong>${formatTime(next.toISOString())}</strong></span>`;
+  }
+  if (statusData.runDuration) {
+    html += `<span>Duration: <strong>${statusData.runDuration}s</strong></span>`;
+  }
+  bar.innerHTML = html;
+}
+
+function formatTime(iso) {
+  if (!iso) return '--';
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+// --- Stats ---
+function renderStats() {
+  document.getElementById('statChecked').textContent = (statusData.domainsChecked ?? resultsData.length).toLocaleString();
+  document.getElementById('statFound').textContent = resultsData.length.toLocaleString();
+
+  const tldCounts = {};
+  for (const r of resultsData) {
+    const tld = r.tld || ('.' + r.domain.split('.').pop());
+    tldCounts[tld] = (tldCounts[tld] || 0) + 1;
+  }
+  const badges = Object.entries(tldCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([tld, n]) => `<span class="tld-badge">${tld} ${n}</span>`)
+    .join('');
+  document.getElementById('tldBadges').innerHTML = badges || '<span style="color:var(--text-dim)">No results yet</span>';
+}
+
+// --- Filters ---
+function renderFilters() {
+  const tlds = [...new Set(resultsData.map(r => r.tld || ('.' + r.domain.split('.').pop())))].sort();
+  const strategies = [...new Set(resultsData.map(r => r.strategy))].sort();
+
+  const tldSelect = document.getElementById('filterTld');
+  const currentTld = tldSelect.value;
+  tldSelect.innerHTML = '<option value="">All</option>' + tlds.map(t => `<option value="${t}">${t}</option>`).join('');
+  tldSelect.value = currentTld;
+
+  const stratSelect = document.getElementById('filterStrategy');
+  const currentStrat = stratSelect.value;
+  stratSelect.innerHTML = '<option value="">All</option>' + strategies.map(s => `<option value="${s}">${s}</option>`).join('');
+  stratSelect.value = currentStrat;
+}
+
+// --- Table ---
+function parsePrice(priceStr) {
+  if (!priceStr) return 0;
+  const m = priceStr.match(/(\d+(?:\.\d+)?)/);
+  return m ? parseFloat(m[1]) : 0;
+}
+
+function getFiltered() {
+  const search = document.getElementById('filterSearch').value.toLowerCase();
+  const tld = document.getElementById('filterTld').value;
+  const strategy = document.getElementById('filterStrategy').value;
+  const maxPriceStr = document.getElementById('filterMaxPrice').value;
+  const maxPrice = maxPriceStr ? parseFloat(maxPriceStr) : Infinity;
+
+  return resultsData.filter(r => {
+    if (search && !r.domain.toLowerCase().includes(search)) return false;
+    const rTld = r.tld || ('.' + r.domain.split('.').pop());
+    if (tld && rTld !== tld) return false;
+    if (strategy && r.strategy !== strategy) return false;
+    if (parsePrice(r.price) > maxPrice) return false;
+    return true;
+  });
+}
+
+function sortBy(key) {
+  if (currentSort.key === key) {
+    currentSort.asc = !currentSort.asc;
+  } else {
+    currentSort = { key, asc: true };
+  }
+  renderTable();
+}
+
+function renderTable() {
+  // Update sort arrows
+  for (const col of ['domain', 'strategy', 'price', 'tld', 'checkedAt']) {
+    const el = document.getElementById('sort-' + col);
+    if (col === currentSort.key) {
+      el.textContent = currentSort.asc ? '\u25B2' : '\u25BC';
+    } else {
+      el.textContent = '';
+    }
+  }
+
+  let data = getFiltered();
+
+  // Sort
+  const { key, asc } = currentSort;
+  data.sort((a, b) => {
+    let va, vb;
+    if (key === 'price') {
+      va = parsePrice(a.price); vb = parsePrice(b.price);
+    } else if (key === 'tld') {
+      va = a.tld || ('.' + a.domain.split('.').pop());
+      vb = b.tld || ('.' + b.domain.split('.').pop());
+    } else {
+      va = a[key] ?? ''; vb = b[key] ?? '';
+    }
+    if (va < vb) return asc ? -1 : 1;
+    if (va > vb) return asc ? 1 : -1;
+    return 0;
+  });
+
+  const tbody = document.getElementById('resultsBody');
+  if (data.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No domains found yet. Run the sniper to start discovering domains!</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = data.map(r => {
+    const tld = r.tld || ('.' + r.domain.split('.').pop());
+    const premium = r.premium ? '<span class="premium-tag">PREMIUM</span>' : '';
+    const date = r.checkedAt ? formatTime(r.checkedAt) : '--';
+    return `<tr>
+      <td class="domain-cell">${esc(r.domain)}${premium}</td>
+      <td class="dim">${esc(r.strategy)}</td>
+      <td>${esc(r.price)}</td>
+      <td class="dim">${esc(tld)}</td>
+      <td class="dim">${date}</td>
+    </tr>`;
+  }).join('');
+}
+
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// --- Init ---
+if (sessionStorage.getItem('authed') === '1') {
+  showDashboard();
+}
+</script>
+</body>
+</html>

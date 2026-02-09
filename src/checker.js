@@ -4,15 +4,31 @@ import net from 'net';
 // --- Primary: EPP-level check via domains.revved.com ---
 // This is the same source of truth registrars use. Supports all TLDs.
 
+const EPP_HEADERS = {
+  'User-Agent': 'Mozilla/5.0',
+  'Referer': 'https://www.namecheap.com/',
+  'Origin': 'https://www.namecheap.com',
+};
+
+function parseEppEntry(entry) {
+  const result = {
+    method: 'epp',
+    available: entry.available,
+    ...(entry.reason ? { note: entry.reason } : {}),
+  };
+  if (entry.premium && entry.fee) {
+    result.premium = true;
+    result.eppPriceAmount = entry.fee.amount;
+    result.eppPrice = `$${entry.fee.amount}/yr`;
+  }
+  return result;
+}
+
 async function checkEpp(domain) {
   try {
     const url = `https://domains.revved.com/v1/domainStatus?domains=${encodeURIComponent(domain)}`;
     const res = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0',
-        'Referer': 'https://www.namecheap.com/',
-        'Origin': 'https://www.namecheap.com',
-      },
+      headers: EPP_HEADERS,
       signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) return { method: 'epp', available: null, reason: `HTTP ${res.status}` };
@@ -21,19 +37,33 @@ async function checkEpp(domain) {
     const entry = data.status?.find(s => s.name === domain);
     if (!entry) return { method: 'epp', available: null, reason: 'domain not in response' };
 
-    const result = {
-      method: 'epp',
-      available: entry.available,
-      ...(entry.reason ? { note: entry.reason } : {}),
-    };
-    if (entry.premium && entry.fee) {
-      result.premium = true;
-      result.eppPrice = `$${entry.fee.amount}/yr`;
-    }
-    return result;
+    return parseEppEntry(entry);
   } catch (err) {
     return { method: 'epp', available: null, reason: err.message };
   }
+}
+
+// --- Bulk EPP check: sends multiple domains in one request ---
+
+async function checkEppBatch(domains) {
+  const results = new Map();
+  try {
+    const query = domains.map(d => encodeURIComponent(d)).join(',');
+    const url = `https://domains.revved.com/v1/domainStatus?domains=${query}`;
+    const res = await fetch(url, {
+      headers: EPP_HEADERS,
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return results; // empty map — caller will fall back
+
+    const data = await res.json();
+    for (const entry of (data.status ?? [])) {
+      results.set(entry.name, parseEppEntry(entry));
+    }
+  } catch {
+    // return whatever we got — caller falls back for missing domains
+  }
+  return results;
 }
 
 // --- Fallback 1: RDAP ---
@@ -130,6 +160,26 @@ export async function checkDomain(domain) {
   }
 
   return { domain, method: 'unknown', available: null, reason: 'all checks inconclusive' };
+}
+
+// --- Batch check: EPP first, then individual fallbacks for misses ---
+
+export async function checkDomainsBatch(domains) {
+  const results = new Map();
+
+  // 1. Bulk EPP check
+  const eppResults = await checkEppBatch(domains);
+  for (const [domain, result] of eppResults) {
+    results.set(domain, { domain, ...result });
+  }
+
+  // 2. Individual fallback for domains EPP didn't resolve
+  const missed = domains.filter(d => !results.has(d));
+  for (const domain of missed) {
+    results.set(domain, await checkDomain(domain));
+  }
+
+  return results;
 }
 
 export async function warmupBootstrap() {
