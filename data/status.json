@@ -1,8 +1,8 @@
 {
   "running": false,
-  "startedAt": "2026-02-09T19:25:44.390Z",
-  "lastCompleted": "2026-02-09T19:45:44.401Z",
-  "domainsChecked": 43984,
-  "domainsFound": 2874,
+  "startedAt": "2026-02-10T03:14:51.824Z",
+  "lastCompleted": "2026-02-10T03:34:51.833Z",
+  "domainsChecked": 54364,
+  "domainsFound": 3138,
   "runDuration": 1200
 }
