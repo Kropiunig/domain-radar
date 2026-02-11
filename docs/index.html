@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cool Domain Sniper</title>
+<title>Domain Radar</title>
 <style>
   :root {
     --bg: #0d1117;
@@ -26,28 +26,29 @@
     display: flex; align-items: center; justify-content: center;
     min-height: 100vh; flex-direction: column; gap: 24px;
   }
-  #gate h1 { font-size: 24px; color: var(--accent); }
+  #gate h1 { font-size: 24px; color: var(--accent); letter-spacing: 2px; }
+  #gate .subtitle { color: var(--text-dim); font-size: 13px; }
   #gate .login-box {
     background: var(--card); border: 1px solid var(--border); border-radius: 12px;
-    padding: 32px; display: flex; flex-direction: column; gap: 16px; width: 340px;
+    padding: 32px; display: flex; flex-direction: column; gap: 16px; width: 360px;
   }
   #gate input {
     background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
-    padding: 10px 14px; color: var(--text); font-size: 14px; outline: none;
-    font-family: var(--mono);
+    padding: 12px 14px; color: var(--text); font-size: 14px; outline: none;
+    font-family: var(--mono); letter-spacing: 2px;
   }
   #gate input:focus { border-color: var(--accent); }
   #gate button {
     background: var(--accent); color: #fff; border: none; border-radius: 6px;
-    padding: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
+    padding: 12px; font-size: 14px; font-weight: 600; cursor: pointer;
   }
   #gate button:hover { opacity: 0.9; }
   #gate .error { color: var(--red); font-size: 13px; text-align: center; display: none; }
+  #gate .lock { font-size: 32px; margin-bottom: 8px; }
 
   /* Dashboard */
   #dashboard { display: none; max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
 
-  /* Header */
   .header {
     display: flex; align-items: center; justify-content: space-between;
     margin-bottom: 24px; flex-wrap: wrap; gap: 12px;
@@ -66,7 +67,6 @@
   }
   .btn:hover { border-color: var(--accent); color: var(--accent); }
 
-  /* Status bar */
   .status-bar {
     background: var(--card); border: 1px solid var(--border); border-radius: 8px;
     padding: 14px 20px; margin-bottom: 20px;
@@ -75,7 +75,6 @@
   .status-bar span { display: flex; align-items: center; gap: 6px; }
   .status-bar strong { color: var(--text); }
 
-  /* Stats cards */
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px; }
   .stat-card {
     background: var(--card); border: 1px solid var(--border); border-radius: 8px;
@@ -90,7 +89,6 @@
     padding: 2px 10px; font-size: 12px; font-family: var(--mono); color: var(--text-dim);
   }
 
-  /* Filters */
   .filters {
     background: var(--card); border: 1px solid var(--border); border-radius: 8px;
     padding: 14px 20px; margin-bottom: 20px;
@@ -103,9 +101,7 @@
   }
   .filters select:focus, .filters input:focus { border-color: var(--accent); }
   .filter-group { display: flex; flex-direction: column; gap: 4px; }
-  .price-display { font-family: var(--mono); font-size: 12px; color: var(--text-dim); min-width: 60px; }
 
-  /* Table */
   .table-wrap {
     background: var(--card); border: 1px solid var(--border); border-radius: 8px;
     overflow-x: auto;
@@ -128,6 +124,7 @@
   }
   .dim { color: var(--text-dim); }
   .empty-state { text-align: center; padding: 48px; color: var(--text-dim); }
+  .decrypt-error { color: var(--red); text-align: center; padding: 20px; font-size: 13px; }
 
   @media (max-width: 640px) {
     .stats { grid-template-columns: 1fr 1fr; }
@@ -138,26 +135,26 @@
 </head>
 <body>
 
-<!-- Password Gate -->
 <div id="gate">
-  <h1>Cool Domain Sniper</h1>
+  <div class="lock">&#x1F6E1;</div>
+  <h1>DOMAIN RADAR</h1>
+  <div class="subtitle">End-to-end encrypted. Enter your key to decrypt.</div>
   <div class="login-box">
-    <input type="password" id="pw" placeholder="Password" autocomplete="off">
-    <button onclick="tryLogin()">Login</button>
-    <div class="error" id="pw-error">Wrong password</div>
+    <input type="password" id="pw" placeholder="Decryption key" autocomplete="off">
+    <button onclick="tryLogin()">Decrypt &amp; Enter</button>
+    <div class="error" id="pw-error">Decryption failed. Wrong key.</div>
   </div>
 </div>
 
-<!-- Dashboard -->
 <div id="dashboard">
   <div class="header">
     <h1>
       <span class="status-dot" id="statusDot"></span>
-      Cool Domain Sniper
+      Domain Radar
     </h1>
     <div class="header-actions">
       <button class="btn" onclick="refreshData()">Refresh Data</button>
-      <button class="btn" onclick="logout()">Logout</button>
+      <button class="btn" onclick="logout()">Lock</button>
     </div>
   </div>
 
@@ -216,27 +213,57 @@
 </div>
 
 <script>
-// --- Config ---
-// SHA-256 of "KaxSniper2026!"
-const PASSWORD_HASH = '0b65e570a71580849acaa7eaa330513c8d0037f3523405ec6c94e8ca543ac934';
+// --- AES-256-GCM Decryption ---
+let userPassword = null;
 
-function dataUrl(file) {
-  return `data/${file}`;
+function b64decode(str) {
+  return Uint8Array.from(atob(str), c => c.charCodeAt(0));
+}
+
+async function deriveKey(password, salt) {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['decrypt']
+  );
+}
+
+async function decryptData(encObj, password) {
+  const salt = b64decode(encObj.salt);
+  const iv = b64decode(encObj.iv);
+  const ciphertextWithTag = b64decode(encObj.data);
+  const key = await deriveKey(password, salt);
+  const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertextWithTag);
+  return JSON.parse(new TextDecoder().decode(decrypted));
 }
 
 // --- Auth ---
-async function sha256(text) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
 async function tryLogin() {
   const pw = document.getElementById('pw').value;
-  const hash = await sha256(pw);
-  if (hash === PASSWORD_HASH) {
-    sessionStorage.setItem('authed', '1');
+  if (!pw) return;
+
+  try {
+    // Try to decrypt status first as a test
+    const statusRes = await fetch('data/status.enc.json?t=' + Date.now());
+    if (!statusRes.ok) {
+      // No encrypted data yet — accept any password
+      userPassword = pw;
+      sessionStorage.setItem('rk', pw);
+      showDashboard();
+      return;
+    }
+    const encStatus = await statusRes.json();
+    await decryptData(encStatus, pw);
+
+    // Decryption succeeded — password is correct
+    userPassword = pw;
+    sessionStorage.setItem('rk', pw);
     showDashboard();
-  } else {
+  } catch {
     document.getElementById('pw-error').style.display = 'block';
   }
 }
@@ -244,7 +271,8 @@ async function tryLogin() {
 document.getElementById('pw').addEventListener('keydown', e => { if (e.key === 'Enter') tryLogin(); });
 
 function logout() {
-  sessionStorage.removeItem('authed');
+  sessionStorage.removeItem('rk');
+  userPassword = null;
   location.reload();
 }
 
@@ -260,21 +288,24 @@ let statusData = {};
 let currentSort = { key: 'checkedAt', asc: false };
 
 async function refreshData() {
+  if (!userPassword) return;
+
   try {
     const [resRes, statRes] = await Promise.allSettled([
-      fetch(dataUrl('results.json') + '?t=' + Date.now()),
-      fetch(dataUrl('status.json') + '?t=' + Date.now()),
+      fetch('data/results.enc.json?t=' + Date.now()),
+      fetch('data/status.enc.json?t=' + Date.now()),
     ]);
 
     if (resRes.status === 'fulfilled' && resRes.value.ok) {
-      const data = await resRes.value.json();
-      resultsData = data.found ?? [];
+      const enc = await resRes.value.json();
+      resultsData = await decryptData(enc, userPassword);
     }
     if (statRes.status === 'fulfilled' && statRes.value.ok) {
-      statusData = await statRes.value.json();
+      const enc = await statRes.value.json();
+      statusData = await decryptData(enc, userPassword);
     }
   } catch (e) {
-    console.error('Fetch error:', e);
+    console.error('Decrypt/fetch error:', e);
   }
   renderAll();
 }
@@ -286,7 +317,6 @@ function renderAll() {
   renderTable();
 }
 
-// --- Status ---
 function renderStatus() {
   const dot = document.getElementById('statusDot');
   const bar = document.getElementById('statusBar');
@@ -294,13 +324,13 @@ function renderStatus() {
 
   dot.className = 'status-dot' + (running ? ' running' : '');
 
-  let html = `<span>Status: <strong>${running ? 'Running' : 'Idle'}</strong></span>`;
+  let html = `<span>Status: <strong>${running ? 'Scanning' : 'Idle'}</strong></span>`;
   if (statusData.lastCompleted) {
-    html += `<span>Last run: <strong>${formatTime(statusData.lastCompleted)}</strong></span>`;
+    html += `<span>Last scan: <strong>${formatTime(statusData.lastCompleted)}</strong></span>`;
   }
   if (statusData.lastCompleted) {
-    const next = new Date(new Date(statusData.lastCompleted).getTime() + 6 * 3600000);
-    html += `<span>Next run: <strong>${formatTime(next.toISOString())}</strong></span>`;
+    const next = new Date(new Date(statusData.lastCompleted).getTime() + 3600000);
+    html += `<span>Next scan: <strong>${formatTime(next.toISOString())}</strong></span>`;
   }
   if (statusData.runDuration) {
     html += `<span>Duration: <strong>${statusData.runDuration}s</strong></span>`;
@@ -314,9 +344,8 @@ function formatTime(iso) {
   return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-// --- Stats ---
 function renderStats() {
-  document.getElementById('statChecked').textContent = (statusData.domainsChecked ?? resultsData.length).toLocaleString();
+  document.getElementById('statChecked').textContent = (statusData.domainsChecked ?? 0).toLocaleString();
   document.getElementById('statFound').textContent = resultsData.length.toLocaleString();
 
   const tldCounts = {};
@@ -328,10 +357,9 @@ function renderStats() {
     .sort((a, b) => b[1] - a[1])
     .map(([tld, n]) => `<span class="tld-badge">${tld} ${n}</span>`)
     .join('');
-  document.getElementById('tldBadges').innerHTML = badges || '<span style="color:var(--text-dim)">No results yet</span>';
+  document.getElementById('tldBadges').innerHTML = badges || '<span style="color:var(--text-dim)">Waiting for first scan...</span>';
 }
 
-// --- Filters ---
 function renderFilters() {
   const tlds = [...new Set(resultsData.map(r => r.tld || ('.' + r.domain.split('.').pop())))].sort();
   const strategies = [...new Set(resultsData.map(r => r.strategy))].sort();
@@ -347,7 +375,6 @@ function renderFilters() {
   stratSelect.value = currentStrat;
 }
 
-// --- Table ---
 function parsePrice(priceStr) {
   if (!priceStr) return 0;
   const m = priceStr.match(/(\d+(?:\.\d+)?)/);
@@ -381,7 +408,6 @@ function sortBy(key) {
 }
 
 function renderTable() {
-  // Update sort arrows
   for (const col of ['domain', 'strategy', 'price', 'tld', 'checkedAt']) {
     const el = document.getElementById('sort-' + col);
     if (col === currentSort.key) {
@@ -392,8 +418,6 @@ function renderTable() {
   }
 
   let data = getFiltered();
-
-  // Sort
   const { key, asc } = currentSort;
   data.sort((a, b) => {
     let va, vb;
@@ -412,7 +436,7 @@ function renderTable() {
 
   const tbody = document.getElementById('resultsBody');
   if (data.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No domains found yet. Run the sniper to start discovering domains!</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No domains found yet. Waiting for scan results...</td></tr>';
     return;
   }
 
@@ -438,7 +462,9 @@ function esc(s) {
 }
 
 // --- Init ---
-if (sessionStorage.getItem('authed') === '1') {
+const savedKey = sessionStorage.getItem('rk');
+if (savedKey) {
+  userPassword = savedKey;
   showDashboard();
 }
 </script>

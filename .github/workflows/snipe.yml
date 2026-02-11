@@ -23,8 +23,6 @@ jobs:
             tlds: ".co,.sh,.xyz"
           - shard: fun
             tlds: ".cool,.lol"
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -34,9 +32,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: results-${{ matrix.shard }}
-          path: |
-            data/results.json
-            data/status.json
+          path: data/
 
   merge:
     needs: scan
@@ -48,28 +44,28 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: results-prime
-          path: shards/prime
+          path: shards/prime/data
       - uses: actions/download-artifact@v4
         with:
           name: results-tech
-          path: shards/tech
+          path: shards/tech/data
       - uses: actions/download-artifact@v4
         with:
           name: results-alt
-          path: shards/alt
+          path: shards/alt/data
       - uses: actions/download-artifact@v4
         with:
           name: results-fun
-          path: shards/fun
+          path: shards/fun/data
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: node scripts/merge-shards.js
+      - run: node scripts/encrypt-data.js
+        env:
+          RADAR_PASSWORD: ${{ secrets.RADAR_PASSWORD }}
       - run: |
-          mkdir -p docs/data
-          cp data/results.json docs/data/results.json
-          cp data/status.json docs/data/status.json
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/results.json data/status.json docs/data/results.json docs/data/status.json
+          git add data/checked.json docs/data/results.enc.json docs/data/status.enc.json
           git diff --staged --quiet || git commit -m "Update radar results" && git push
