@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
 
-const shardDirs = ['shards/premium', 'shards/budget'];
+const shardDirs = ['shards/prime', 'shards/tech', 'shards/alt', 'shards/fun'];
 const outputResults = join(root, 'data', 'results.json');
 const outputStatus = join(root, 'data', 'status.json');
 
