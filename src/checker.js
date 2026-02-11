@@ -173,10 +173,15 @@ export async function checkDomainsBatch(domains) {
     results.set(domain, { domain, ...result });
   }
 
-  // 2. Individual fallback for domains EPP didn't resolve
+  // 2. Individual fallback for domains EPP didn't resolve — in parallel
   const missed = domains.filter(d => !results.has(d));
-  for (const domain of missed) {
-    results.set(domain, await checkDomain(domain));
+  if (missed.length > 0) {
+    const fallbacks = await Promise.allSettled(missed.map(d => checkDomain(d)));
+    for (let i = 0; i < missed.length; i++) {
+      if (fallbacks[i].status === 'fulfilled') {
+        results.set(missed[i], fallbacks[i].value);
+      }
+    }
   }
 
   return results;

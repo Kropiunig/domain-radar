@@ -1,7 +1,7 @@
 import { readFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { checkDomain, checkDomainsBatch, warmupBootstrap } from './checker.js';
+import { checkDomainsBatch, warmupBootstrap } from './checker.js';
 import { generateDomains } from './generator.js';
 import { formatPrice, isAffordable } from './pricing.js';
 import {
@@ -34,31 +34,41 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function parseMaxRuntime() {
-  const idx = process.argv.indexOf('--max-runtime');
+function parseCliArg(flag) {
+  const idx = process.argv.indexOf(flag);
   if (idx === -1 || idx + 1 >= process.argv.length) return null;
-  const ms = parseInt(process.argv[idx + 1], 10);
-  return Number.isFinite(ms) && ms > 0 ? ms : null;
-}
-
-function parsePremiumPrice(eppPrice) {
-  if (!eppPrice) return null;
-  const match = eppPrice.match(/\$(\d+(?:\.\d+)?)/);
-  return match ? parseFloat(match[1]) : null;
+  return process.argv[idx + 1];
 }
 
 async function main() {
   printBanner();
 
   const config = await loadConfig();
-  const maxRuntime = parseMaxRuntime();
+  const maxRuntime = (() => {
+    const v = parseCliArg('--max-runtime');
+    return v ? parseInt(v, 10) : null;
+  })();
+
+  // CLI overrides for TLD/strategy filtering (used by matrix jobs)
+  const tldFilter = parseCliArg('--tlds');
+  if (tldFilter) {
+    config.tlds = tldFilter.split(',').map(t => t.startsWith('.') ? t : '.' + t);
+  }
+  const stratFilter = parseCliArg('--strategies');
+  if (stratFilter) {
+    config.strategies = stratFilter.split(',');
+  }
+
+  const batchSize = config.batchSize || 50;
+  const concurrentBatches = config.concurrentBatches || 3;
+  const domainsPerRound = batchSize * concurrentBatches;
 
   console.log(`  Config: ${config.tlds.join(', ')}`);
   console.log(`  Max price: $${config.maxPricePerYear}/yr`);
   console.log(`  Keywords: ${config.keywords.join(', ')}`);
   console.log(`  Names: ${config.personalNames.join(', ')}`);
   console.log(`  Strategies: ${config.strategies.join(', ')}`);
-  console.log(`  Batch size: ${config.batchSize}`);
+  console.log(`  Throughput: ${concurrentBatches} x ${batchSize} = ${domainsPerRound} domains/round`);
   if (maxRuntime) console.log(`  Max runtime: ${Math.round(maxRuntime / 1000)}s`);
   console.log();
 
@@ -86,7 +96,7 @@ async function main() {
 
   // Auto-save interval
   let saveCounter = 0;
-  const SAVE_EVERY = 50;
+  const SAVE_EVERY = 200;
 
   // Handle Ctrl+C / max-runtime gracefully
   let stopping = false;
@@ -121,44 +131,57 @@ async function main() {
     }, maxRuntime);
   }
 
-  // Main loop — batched
+  // Main loop — concurrent batches
   const generator = generateDomains(config);
-  const batchSize = config.batchSize || 10;
-  let batchNum = 0;
+  let roundNum = 0;
 
   while (!stopping) {
-    // Collect a batch of domains to check
-    const batch = []; // { domain, strategy }
-    while (batch.length < batchSize) {
+    // Collect domains for all concurrent batches
+    const allDomains = []; // { domain, strategy, tld }
+    while (allDomains.length < domainsPerRound) {
       const next = await generator.next();
       if (next.done) break;
 
       const { domain, strategy } = next.value;
-
-      // Skip already checked
       if (wasChecked(domain)) continue;
 
-      // Skip unaffordable TLDs
       const tld = '.' + domain.split('.').pop();
       if (!isAffordable(tld, config.maxPricePerYear)) continue;
 
-      batch.push({ domain, strategy, tld });
+      allDomains.push({ domain, strategy, tld });
     }
 
-    if (batch.length === 0) break; // generator exhausted
+    if (allDomains.length === 0) break;
 
-    batchNum++;
-    printBatchProgress(batchNum, batch.length);
+    roundNum++;
+    printBatchProgress(roundNum, allDomains.length);
 
-    // Rate limit — one delay per batch
+    // Split into concurrent batches
+    const batches = [];
+    for (let i = 0; i < allDomains.length; i += batchSize) {
+      batches.push(allDomains.slice(i, i + batchSize));
+    }
+
+    // Rate limit — one delay per round
     await sleep(config.requestDelayMs);
 
-    // Check entire batch
-    const domainNames = batch.map(b => b.domain);
-    const results = await checkDomainsBatch(domainNames);
+    // Fire all batches concurrently
+    const batchResults = await Promise.allSettled(
+      batches.map(batch => checkDomainsBatch(batch.map(b => b.domain)))
+    );
+
+    // Merge all results into one map
+    const results = new Map();
+    for (const r of batchResults) {
+      if (r.status === 'fulfilled') {
+        for (const [domain, result] of r.value) {
+          results.set(domain, result);
+        }
+      }
+    }
 
     // Process results
-    for (const { domain, strategy, tld } of batch) {
+    for (const { domain, strategy, tld } of allDomains) {
       if (stopping) break;
 
       const result = results.get(domain);
@@ -187,8 +210,6 @@ async function main() {
           premium: result.premium ?? false,
           checkedAt: new Date().toISOString(),
         });
-        // Save immediately when we find something
-        await saveResults();
       } else if (result.available === false) {
         printTaken(domain);
       } else {
@@ -196,8 +217,14 @@ async function main() {
       }
     }
 
+    // Save found domains immediately if any new ones
+    const currentStats = getStats();
+    if (currentStats.found > stats.found) {
+      await saveResults();
+    }
+
     // Auto-save checked list periodically
-    saveCounter += batch.length;
+    saveCounter += allDomains.length;
     if (saveCounter >= SAVE_EVERY) {
       await saveResults();
       saveCounter = 0;

@@ -3,7 +3,8 @@
   "personalNames": ["alex", "kax"],
   "tlds": [".com", ".dev", ".io", ".app", ".co", ".ai", ".sh", ".xyz", ".cool", ".lol"],
   "maxPricePerYear": 50,
-  "requestDelayMs": 800,
-  "batchSize": 10,
+  "requestDelayMs": 200,
+  "batchSize": 50,
+  "concurrentBatches": 3,
   "strategies": ["short", "keyword", "personal", "expired"]
 }
